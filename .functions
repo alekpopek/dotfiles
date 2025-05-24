@@ -1,0 +1,153 @@
+# --- Dotfiles Functions ---
+# All functions below are designed for Zsh on macOS.
+# Many use macOS-specific tools or APIs.
+#
+# Usage: source this file in your .zshrc or load automatically.
+
+# --- Create a new directory and enter it ---
+# Usage: mkd mydir
+function mkd() {
+	mkdir -p "$@" && cd "$@"
+}
+
+# --- Show size of file or directory (human-readable) ---
+# Usage: fs [file|dir]
+function fs() {
+	if du -b /dev/null > /dev/null 2>&1; then
+		local arg=-sbh
+	else
+		local arg=-sh
+	fi
+	if [[ -n "$@" ]]; then
+		du $arg -- "$@"
+	else
+		du $arg .[^.]* *
+	fi
+}
+
+# --- Git diff with color (if git is available) ---
+# Usage: diff file1 file2
+hash git &>/dev/null
+if [ $? -eq 0 ]; then
+	function diff() {
+		git diff --no-index --color-words "$@"
+	}
+fi
+
+# --- Show all DNS info for a domain ---
+# Usage: digga example.com
+function digga() {
+	dig +nocmd "$1" any +multiline +noall +answer
+}
+
+# --- Add a note to Notes.app (macOS) ---
+# Usage: note 'text'  OR  echo 'text' | note
+function note() {
+	local text
+	if [ -t 0 ]; then # argument
+		text="$1"
+	else # pipe
+		text=$(cat)
+	fi
+	body=$(echo "$text" | sed -E 's|$|<br>|g')
+	osascript >/dev/null <<EOF
+	tell application "Notes"
+		tell account "iCloud"
+			tell folder "Notes"
+				make new note with properties {name:"$text", body:"$body"}
+			end tell
+		end tell
+	end tell
+EOF
+}
+
+# --- Add a reminder to Reminders.app (macOS) ---
+# Usage: remind 'text'  OR  echo 'text' | remind
+function remind() {
+	local text
+	if [ -t 0 ]; then
+		text="$1" # argument
+	else
+		text=$(cat) # pipe
+	fi
+	osascript >/dev/null <<EOF
+	tell application "Reminders"
+		tell the default list
+			make new reminder with properties {name:"$text"}
+		end tell
+	end tell
+EOF
+}
+
+# --- Extract almost any archive file ---
+# Usage: extract file.zip
+function extract() {
+	if [ -f $1 ] ; then
+		case $1 in
+			*.tar.bz2) tar xjf $1 ;;
+			*.tar.gz) tar xzf $1 ;;
+			*.bz2) bunzip2 $1 ;;
+			*.rar) rar x $1 ;;
+			*.gz) gunzip $1 ;;
+			*.tar) tar xf $1 ;;
+			*.tbz2) tar xjf $1 ;;
+			*.tgz) tar xzf $1 ;;
+			*.zip) unzip $1 ;;
+			*.Z) uncompress $1 ;;
+			*.7z) 7z x $1 ;;
+			*) echo "'$1' cannot be extracted via extract()" ;;
+		esac
+	else
+		echo "'$1' is not a valid file"
+	fi
+}
+
+# --- Helper: get dotfiles directory (where this file is) ---
+# Used for loading .secrets from the repo location.
+_dotfiles_dir="$(cd "${0:A:h}" 2>/dev/null || cd "$(dirname "$0")"; pwd)"
+
+# --- Add a card to Trello (requires .secrets) ---
+# Usage: trello "Task title" "Optional description"
+# Requires: TRELLO_KEY, TRELLO_TOKEN, TRELLO_LIST_ID in .secrets
+function trello() {
+	# Load secrets from dotfiles dir
+	[[ -r "$_dotfiles_dir/.secrets" ]] && source "$_dotfiles_dir/.secrets"
+	local key="$TRELLO_KEY"
+	local token="$TRELLO_TOKEN"
+	local list="$TRELLO_LIST_ID"
+	local name="$1"
+	local desc="${2:-}"
+	if [[ -z "$key" || -z "$token" || -z "$list" ]]; then
+		echo "Missing TRELLO_KEY, TRELLO_TOKEN or TRELLO_LIST_ID in .secrets" >&2
+		return 1
+	fi
+	curl -s -X POST "https://api.trello.com/1/cards" \
+		-d "idList=$list" -d "name=$name" -d "desc=$desc" \
+		-d "key=$key" -d "token=$token"
+}
+
+# --- Add a task to Todoist (requires .secrets) ---
+# Usage: todo "Task title"
+# Optionally set TODOIST_PROJECT_ID in .secrets
+# Requires: TODOIST_API_TOKEN in .secrets
+function todo() {
+	# Load secrets from dotfiles dir
+	[[ -r "$_dotfiles_dir/.secrets" ]] && source "$_dotfiles_dir/.secrets"
+	local token="$TODOIST_API_TOKEN"
+	local content="$1"
+	local project_id="$TODOIST_PROJECT_ID"
+	if [[ -z "$token" ]]; then
+		echo "Missing TODOIST_API_TOKEN in .secrets" >&2
+		return 1
+	fi
+	local data="{\"content\": \"$content\"}"
+	if [[ -n "$project_id" ]]; then
+		data="{\"content\": \"$content\", \"project_id\": \"$project_id\"}"
+	fi
+	curl -s \
+		--request POST \
+		--url "https://api.todoist.com/rest/v2/tasks" \
+		--header "Authorization: Bearer $token" \
+		--header "Content-Type: application/json" \
+		--data "$data"
+}
