@@ -124,4 +124,8 @@ Some functions require API tokens/IDs (for Trello and Todoist). This is handled 
 
 ---
 
+## License
+
+MIT © 2024 Alex Popek
+
 **Enjoy your productive shell!** 
